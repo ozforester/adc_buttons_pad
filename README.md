@@ -6,3 +6,6 @@ Understanding of popular avr microcontroller and not popular avr-gcc assembler -
 To get more skills, knowledges and fun is the first. You should know<br>
 
 (Well, I am not english speaking man, so please forgive me my weird style)
+
+![screenshot](ADC.JPG)
+
