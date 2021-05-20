@@ -45,21 +45,24 @@
 #define p7 7
 
 ; registers
-accum = 0			; r0
-temp  = 16			; good worker (.set)
-char  = 17			; msg char
-tcntr = 18			; time counter
-counter = 19                    ; delay counter reg
-address = 20                    ; twi address reg
-data = 21                       ; twi data reg
-len = 22			; string length
-btnl = 23			; adc lsb
-btnh = 24			; adc msb
+accum = 0		; r0
+temp  = 16		; good worker (.set)
+char  = 17		; msg char
+tcntr = 18		; time counter
+counter = 19            ; delay counter reg
+address = 20            ; twi address reg
+data = 21               ; twi data reg
+len = 22		; string length
+btnl = 23		; adc lsb
+btnh = 24		; adc msb
 ; 25
 
-.data				; eeprom preferred
+.data		; eeprom
 
-.text
+.text		; progmem
+
+msg1: .asciz "SAMPLE:"		;
+ret                             ;
 
 .global main			;
 .global TIMER0_OVF_vect		;
@@ -162,22 +165,23 @@ adc_read:
 	sbis ADCSRA, ADIF	; conversion complete
 	rjmp adc		;
 	in btnl, ADCL		; lsb sample
+	andi btnl, 0xf8		; nefig
 	in btnh, ADCH		; msb sample
 	andi btnh, 0x03		;
 ret
-
-msg1: .asciz "ADC SAMPLE:"      ; 1st line
-ret				;
 
 lcd_cur:			; cursor position
         rcall twi_start         ;
         rcall twi_sla_w         ;
         rcall wait_bf           ;
         andi data, 0x0F         ; clear data bits
-        rcall d7_high           ; 1xxx - set dram
-        rcall d5_high           ; x100 - address 6:4
+        rcall d7_high           ; 1xxx - dram
         rcall instr_w           ;
         rcall twi_e_pulse       ; take
+        andi data, 0x0F         ; clear data bits
+        rcall d6_high           ; xxxx absolute address
+        rcall d5_high           ; 1+2+3
+        rcall d4_high           ;
         rcall twi_e_pulse       ;
         rcall twi_stop          ;
 ret				;
