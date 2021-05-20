@@ -5,8 +5,7 @@
 ; ATmega8 @4MHz internal osc. (H:D9, L:23)
 ; JHD162A HD44780 via twi extension PCF8574AT
 ; Four buttons pad voltage divider connected to adc port.
-; If button pressed its adc sample prints on the lcd screen.
-; alpha version (copying previous repos to build this one)
+; If button has pressed its adc sample printed on lcd.
 
 #undef __SFR_OFFSET
 #define __SFR_OFFSET 0
