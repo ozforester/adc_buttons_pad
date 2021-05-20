@@ -63,6 +63,7 @@ ret                             ;
 
 .global main			;
 .global TIMER0_OVF_vect		;
+.global __vector_default        ;
 
 main:				;
         rcall timer_init        ;
@@ -627,7 +628,6 @@ twi_init:			; 100 kHz clock @4MHz
 	out TWSR, temp		;
 ret				;
 
-.global __vector_default        ; Note [10] nongnu.org assembly
 __vector_default:		;
 reti				;
 
