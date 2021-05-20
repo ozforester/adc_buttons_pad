@@ -6,7 +6,7 @@
 
 ; ATmega8 @4MHz internal osc. (H:D9, L:23)
 ; JHD162A HD44780 via twi extension PCF8574AT
-; Voltage divider and four buttons pad connected to adc port.
+; Four buttons pad voltage divider connected to adc port.
 ; If button pressed its adc sample prints on the lcd screen.
 ; alpha version (copying previous repos to build this one)
 
@@ -32,8 +32,7 @@
 ; P6 - DB6
 ; P7 - DB7
 
-; adc input
-; buttons - PC3
+; adc input - PC3
 
 ; pcf8574
 #define rs 0
@@ -51,10 +50,12 @@ temp  = 16			; good worker (.set)
 char  = 17			; msg char
 tcntr = 18			; time counter
 counter = 19                    ; delay counter reg
- code = 20                       ; blink code reg
-address = 21                    ; twi address reg
-data = 22                       ; twi data reg
-len = 23			; string length
+address = 20                    ; twi address reg
+data = 21                       ; twi data reg
+len = 22			; string length
+btnl = 23			; adc lsb
+btnh = 24			; adc msb
+; 25
 
 .data				; eeprom preferred
 
@@ -66,25 +67,106 @@ len = 23			; string length
 main:				;
         rcall timer_init        ;
         rcall delay_20ms        ;
-        rcall twi_init          ; 100kHz
-        rcall twi_scan          ; downwards 127..0
-        cpi address, 0          ; 0 when no answer
-        brne main1              ; scan success
-        rcall led_on            ; error
+        rcall twi_init          ;
+        rcall twi_scan          ;
+        cpi address, 0          ;
+        brne main1              ;
+        rcall led_on            ;
         main1:                  ;
         rcall pcf_init          ;
         rcall lcd_init          ;
-	;rcall lcd_clear	;
-	;rcall lcd_home		;
-	;rcall lcd_cur		;
-        rcall lcd_print         ;
-        ;rcall led_on		; j-tag (:
+        rcall lcd_print_msg     ;
+	rcall adc_init		;
+	rcall adc_print		;
+        rcall led_on		; j-tag (:
 	loop:			;
 	rjmp loop 		;
 ret				;
 
-msg1: .asciz "Hi, stranger,"    ; temporarily in prog. space
-msg2: .asciz "me ozforester"    ;
+print_asc:			;
+        rcall twi_start         ;
+        rcall twi_sla_w         ;
+
+	; if sample < 1000 go to b100
+	cpi zh, 0x03		;
+	brlo pa2		;
+	cpi zl, 0xe8		;
+	brlo pa2		;
+
+	pa1:			;
+        ldi char, 0x2f          ; x1000
+        clc                     ;
+        b1000:                  ;
+        inc char                ;
+        subi zl, 0xe8           ;
+        sbci zh, 0x03           ;
+        brcc b1000              ;
+        rcall lcd_char          ; send char via twi
+        subi zl, 0x18		;
+	subi zh, 0xfc           ; 1000 rev
+	pa2:
+        ldi char, 0x2f          ; x100
+	clc			;
+	b100:			;
+	inc char		;
+	subi zl, 0x64		;
+	sbci zh, 0x00		;
+	brcc b100		;
+        rcall lcd_char          ; send char via twi
+        subi zl, 0x9c           ; 100 rev
+        subi zh, 0xff           ;
+
+        ldi char, 0x2f          ; x10
+        clc                     ;
+	b10:			;
+	inc char		;
+	subi zl, 0x0a		;
+	brcc b10		;
+        rcall lcd_char          ; send char
+        subi zl, 0xf6           ; 10 rev
+
+	mov char, zl		; x1
+	subi char, 0xd0		;
+        rcall lcd_char          ; send char
+        rcall twi_stop          ;
+ret				;
+
+adc_print:			; sampling and printing cycle
+	rcall lcd_cur		; 2nd line 0 pos
+	rcall adc_read		;
+	mov zh, btnh		;
+        ;ldi zh, 0x03           ;
+	mov zl, btnl		;
+        ;ldi zl, 0xe7           ;
+	rcall print_asc		;
+        rcall delay_20ms        ;
+	rcall delay_20ms	;
+	rjmp adc_print		; loop
+ret				;
+
+adc_init:
+	cbi DDRC, PC3		; PC3 as input
+	sbi ADMUX, REFS0	;
+	sbi ADMUX, REFS1	; internal reference 2.56
+	sbi ADMUX, MUX1		;
+	sbi ADMUX, MUX0		; mux ADC3
+	sbi ADCSRA, ADPS2	;
+	sbi ADCSRA, ADPS1	; prescaler 62.5 kHz
+        sbi ADCSRA, ADEN        ; enable adc
+        sbi ADCSRA, ADSC        ; start conversion
+ret
+
+adc_read:
+	sbi ADCSRA, ADSC	; start conversion
+	adc:
+	sbis ADCSRA, ADIF	; conversion complete
+	rjmp adc		;
+	in btnl, ADCL		; lsb sample
+	in btnh, ADCH		; msb sample
+	andi btnh, 0x03		;
+ret
+
+msg1: .asciz "ADC SAMPLE:"      ; 1st line
 ret				;
 
 lcd_cur:			; cursor position
@@ -96,7 +178,6 @@ lcd_cur:			; cursor position
         rcall d5_high           ; x100 - address 6:4
         rcall instr_w           ;
         rcall twi_e_pulse       ; take
-        ;rcall instr_w          ; 0000 - address 3:0
         rcall twi_e_pulse       ;
         rcall twi_stop          ;
 ret				;
@@ -109,7 +190,6 @@ lcd_home:			;
         rcall instr_w           ; 0000 - display
         rcall twi_e_pulse       ; take
         rcall d5_high           ; 001* - home
-        ;rcall instr_w          ;
         rcall twi_e_pulse       ;
         rcall twi_stop          ;
 ret				;
@@ -119,30 +199,22 @@ lcd_clear:                      ;
         rcall twi_sla_w         ;
         rcall wait_bf           ;
         andi data, 0x0F         ; clear data bits
-        rcall instr_w        ; set
+        rcall instr_w        	; set
         rcall twi_e_pulse       ; take
         rcall d4_high           ; 0001 - clear
-        ;rcall instr_w        ;
         rcall twi_e_pulse       ;
 	rcall twi_stop		;
 ret                             ;
 
-
-lcd_print:			;
+lcd_print_msg:			;
         ldi zh, hi8(msg1)       ; z *-> msg1
         ldi zl, lo8(msg1)       ;
 	rcall lcd_msg		;
-	rcall lcd_cur		;
-        ldi zh, hi8(msg2)       ; z *-> msg2
-        ldi zl, lo8(msg2)       ;
-        rcall lcd_msg           ;
 ret				;
 
 lcd_msg:			;
 	rcall twi_start		;
 	rcall twi_sla_w		;
-        ;ldi zh, hi8(msg1) 	; z *-> msg
-        ;ldi zl,	lo8(msg1)	;
 	rcall strlen		; length in temp register
 	ls1:			;
 	lpm			; read msg word into r0
@@ -155,7 +227,7 @@ lcd_msg:			;
 ret				; or exit
 
 strlen:				; count length of msg
-        ;ldi len, 7             ; debugging
+        ;ldi len, 3             ; debugging
 	;ret			; debugging
 	push zh			; save msg pointer
 	push zl			; to stack
@@ -171,7 +243,7 @@ strlen:				; count length of msg
 	sl2:			;
 	pop zl			; restore flash pointer
 	pop zh			; from stack
-	;ldi len, 7		; debugging
+	;ldi len, 3		; debugging
 ret				;
 
 lcd_char:			; write one character
